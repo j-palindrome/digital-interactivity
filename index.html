@@ -27,6 +27,16 @@
         font-size: 11px;
         line-height: 1.4;
       }
+      #overlay button {
+        pointer-events: auto;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #eee;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font: inherit;
+      }
       canvas {
         display: block;
       }
@@ -36,6 +46,10 @@
   </head>
   <body>
     <div id="overlay">
+      <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+        <button id="random-student-key" type="button">Random Student Key</button>
+        <button id="random-pool-key" type="button">Random Pool Grid</button>
+      </div>
       <div>Press A–Z on keyboard to trigger sketches</div>
       <div id="status">Loading sketches...</div>
     </div>
