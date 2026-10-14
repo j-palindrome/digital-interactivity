@@ -5,11 +5,82 @@
  */
 
 // 1. Import all student sketch files as raw text strings
-const sketchModules = import.meta.glob('/students/**/*.js', {
+const sketchModules = import.meta.glob([
+  '/students/**/*.js',
+  '!/students/**/p5*.js',
+  '!/students/**/{preload,data,shapes}.js',
+], {
   query: '?raw',
   import: 'default',
   eager: true,
 })
+
+const soundModules = import.meta.glob('/students/**/*.{mp3,wav,ogg,m4a,aac,webm}', {
+  query: '?url',
+  import: 'default',
+  eager: true,
+})
+
+const soundAssetByPath = Object.fromEntries(
+  Object.entries(soundModules).map(([path, url]) => [path.replace(/\\/g, '/'), url]),
+)
+
+function resolveSoundPaths(code, filePath) {
+  const sketchDir = filePath.slice(0, filePath.lastIndexOf('/'))
+
+  return code.replace(
+    /(\bloadSound\s*\(\s*)(['"])([^'"]+)\2/g,
+    (match, prefix, quote, soundPath) => {
+      if (/^(?:https?:|data:|blob:|\/)/i.test(soundPath)) return match
+
+      const relativePath = soundPath.replace(/\\/g, '/').replace(/^\.\//, '')
+      const candidates = [
+        `${sketchDir}/${relativePath}`,
+        `/students/${relativePath}`,
+      ].map((path) => path.replace(/\/+/g, '/'))
+
+      const assetUrl = candidates
+        .map((path) => soundAssetByPath[path])
+        .find(Boolean)
+
+      return assetUrl ? `${prefix}${JSON.stringify(assetUrl)}` : match
+    },
+  )
+}
+
+function loadSoundForSketch(path, onLoad, onError) {
+  const p5LoadSound = window.loadSound
+  if (typeof p5LoadSound !== 'function') {
+    return Promise.reject(new Error('p5.sound loadSound() is unavailable'))
+  }
+
+  if (typeof onLoad === 'function' || typeof onError === 'function') {
+    return p5LoadSound(path, onLoad, onError)
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const resolveOnce = (sound) => {
+      if (settled) return
+      settled = true
+      resolve(sound)
+    }
+    const rejectOnce = (error) => {
+      if (settled) return
+      settled = true
+      reject(error)
+    }
+
+    try {
+      const result = p5LoadSound(path, resolveOnce, rejectOnce)
+      if (result && typeof result.then === 'function') {
+        result.then(resolveOnce, rejectOnce)
+      }
+    } catch (error) {
+      rejectOnce(error)
+    }
+  })
+}
 
 // Fisher-Yates array shuffle
 function shuffle(array) {
@@ -23,15 +94,18 @@ function shuffle(array) {
 
 function compileSketch(codeString, meta) {
   try {
-    return new Function(`
-      ${codeString}
+    const source = resolveSoundPaths(codeString, meta.filePath)
+
+    return new Function('loadSound', `
+      ${source}
       return {
         setup: typeof setup === 'function' ? setup : null,
         draw: typeof draw === 'function' ? draw : null,
+        keyPressed: typeof keyPressed === 'function' ? keyPressed : null,
         progress: typeof progress === 'function' ? progress : null,
         setStartTime: (t) => { if (typeof startTime !== 'undefined') startTime = t },
       }
-    `)()
+    `)(loadSoundForSketch)
   } catch (err) {
     console.error(`Error compiling sketch [${meta.filePath}]:`, err)
     return null
@@ -82,18 +156,32 @@ function assembleFullGridFromPool() {
   }))
 }
 
-function triggerKey(char) {
+async function triggerKey(char) {
+  window.userStartAudio?.()
   const binding = keyBindings[char?.toLowerCase()]
   if (!binding) return
 
-  binding.active = true
-  binding.startedAt = millis()
+  binding.active = false
   try {
-    binding.instance.setup?.()
+    await binding.instance.setup?.()
+    binding.startedAt = millis()
     binding.instance.setStartTime(binding.startedAt)
+
+    const originalKey = binding.sketchName.match(/(?:^|key[_-]?)([a-z])$/i)?.[1]
+    if (originalKey) {
+      const previousKey = window.key
+      window.key = originalKey.toLowerCase()
+      try {
+        binding.instance.keyPressed?.()
+      } finally {
+        window.key = previousKey
+      }
+    }
+
+    binding.active = true
   } catch (err) {
     binding.active = false
-    console.error(`Error triggering sketch for key [${char}]:`, err)
+    console.error(`Error starting sketch for key [${char}]:`, err)
   }
 }
 
@@ -103,13 +191,32 @@ window.setup = () => {
   background(17)
 
   // Group available sketch files by student folder
+  // Exclude p5 library bundles and common helper scripts
+  const ignoredFileNames = new Set([
+    'p5.js',
+    'p5.min.js',
+    'p5.sound.js',
+    'p5.sound.min.js',
+    'preload.js',
+    'data.js',
+    'shapes.js',
+  ])
+
   const filesByFolder = {}
   for (const [filePath, code] of Object.entries(sketchModules)) {
     const parts = filePath.split('/')
-    // filePath: /students/<studentName>/<filename>.js
+    // filePath pattern: /students/<studentName>/.../<filename>.js
+    if (parts.length < 4) continue
+
+    const fileName = parts[parts.length - 1]
+    if (ignoredFileNames.has(fileName.toLowerCase())) continue
+
     const studentName = parts[2]
+    // Extract sketch name from subfolder if present, or filename
+    const sketchName = parts.length > 4 ? parts[parts.length - 2] : fileName.replace(/\.js$/, '')
+
     if (!filesByFolder[studentName]) filesByFolder[studentName] = []
-    filesByFolder[studentName].push({ filePath, code, studentName })
+    filesByFolder[studentName].push({ filePath, code, studentName, sketchName })
   }
 
   const studentFolders = shuffle(Object.keys(filesByFolder))
@@ -127,6 +234,7 @@ window.setup = () => {
         keyBindings[keyChar] = {
           instance,
           studentName: item.studentName,
+          sketchName: item.sketchName,
           filePath: item.filePath,
           active: false,
         }
@@ -142,7 +250,7 @@ window.setup = () => {
   const statusEl = document.getElementById('status')
   if (statusEl) {
     const summary = Object.entries(keyBindings)
-      .map(([k, v]) => `${k.toUpperCase()}: ${v.studentName}`)
+      .map(([k, v]) => `${k.toUpperCase()}: ${v.studentName} (${v.sketchName})`)
       .join(' | ')
     statusEl.textContent = summary || 'No sketches found'
   }
@@ -156,7 +264,8 @@ window.setup = () => {
     triggerKey(selection.key)
     const statusEl = document.getElementById('status')
     if (statusEl) {
-      statusEl.textContent = `Random student: ${selection.studentName} → ${selection.key.toUpperCase()}`
+      const sketchLabel = selection.binding?.sketchName ? ` (${selection.binding.sketchName})` : ''
+      statusEl.textContent = `Random student: ${selection.studentName}${sketchLabel} → ${selection.key.toUpperCase()}`
     }
   })
 
@@ -166,7 +275,8 @@ window.setup = () => {
     triggerKey(selection.key)
     const statusEl = document.getElementById('status')
     if (statusEl) {
-      statusEl.textContent = `Random pool: ${selection.studentName} → ${selection.key.toUpperCase()}`
+      const sketchLabel = selection.binding?.sketchName ? ` (${selection.binding.sketchName})` : ''
+      statusEl.textContent = `Random pool: ${selection.studentName}${sketchLabel} → ${selection.key.toUpperCase()}`
     }
   })
 }
