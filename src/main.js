@@ -111,48 +111,26 @@ function compileSketch(codeString, meta) {
   }
 }
 
-// Map of alphabet key -> active sketch instance info
+const ALPHABET = 'abcdefghijklmnopqrstuvwxyz'.split('')
 const keyBindings = {}
-const studentKeyMap = {}
+let sketchPool = []
 
-function randomFrom(array) {
-  if (!Array.isArray(array) || array.length === 0) return null
-  return array[Math.floor(Math.random() * array.length)]
-}
+function randomize() {
+  for (const k of Object.keys(keyBindings)) delete keyBindings[k]
 
-function randomizeStudentKey(studentName = null) {
-  const targetStudent = studentName || randomFrom(Object.keys(studentKeyMap))
-  if (!targetStudent) return null
-
-  const pool = studentKeyMap[targetStudent] || []
-  const key = randomFrom(pool)
-  if (!key) return null
-
-  return {
-    studentName: targetStudent,
-    key,
-    binding: keyBindings[key],
+  let keyIdx = 0
+  for (const item of shuffle(sketchPool)) {
+    if (keyIdx >= ALPHABET.length) break
+    const instance = compileSketch(item.code, item)
+    if (!instance) continue
+    keyBindings[ALPHABET[keyIdx++]] = { ...item, instance, active: false }
   }
-}
 
-function randomizePoolKey() {
-  const pool = Object.keys(keyBindings)
-  const key = randomFrom(pool)
-  if (!key) return null
-
-  return {
-    studentName: keyBindings[key].studentName,
-    key,
-    binding: keyBindings[key],
-  }
-}
-
-function assembleFullGridFromPool() {
-  return shuffle(Object.keys(keyBindings)).map((key) => ({
-    studentName: keyBindings[key].studentName,
-    key,
-    binding: keyBindings[key],
-  }))
+  const summary = Object.entries(keyBindings)
+    .map(([k, v]) => `${k.toUpperCase()}: ${v.studentName} (${v.sketchName})`)
+    .join(' | ')
+  setStatus(summary || 'No sketches found')
+  console.log(`[sketches] randomized ${keyIdx} keys from pool of ${sketchPool.length}`)
 }
 
 async function triggerKey(char) {
@@ -222,126 +200,18 @@ window.setup = () => {
 }
 
 function bindSketches(sources) {
-  // Group available sketch files by student folder
-  // Exclude p5 library bundles and common helper scripts
-  const ignoredFileNames = new Set([
-    'p5.js',
-    'p5.min.js',
-    'p5.sound.js',
-    'p5.sound.min.js',
-    'preload.js',
-    'data.js',
-    'shapes.js',
-  ])
-
-  const filesByFolder = {}
-  for (const [filePath, code] of sources) {
-    const parts = filePath.split('/')
+  sketchPool = sources.map(([filePath, code]) => {
     // filePath pattern: /students/<studentName>/.../<filename>.js
-    if (parts.length < 4) continue
-
+    const parts = filePath.split('/')
     const fileName = parts[parts.length - 1]
-    if (ignoredFileNames.has(fileName.toLowerCase())) continue
-
-    const studentName = parts[2]
-    // Extract sketch name from subfolder if present, or filename
-    const sketchName = parts.length > 4 ? parts[parts.length - 2] : fileName.replace(/\.js$/, '')
-
-    if (!filesByFolder[studentName]) filesByFolder[studentName] = []
-    filesByFolder[studentName].push({ filePath, code, studentName, sketchName })
-  }
-
-  const studentFolders = shuffle(Object.keys(filesByFolder))
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz'.split('')
-
-  let keyIdx = 0
-
-  // Assign sketches from student folders to a-z
-  for (const folder of studentFolders) {
-    for (const item of filesByFolder[folder]) {
-      if (keyIdx >= alphabet.length) break
-      const keyChar = alphabet[keyIdx++]
-      const instance = compileSketch(item.code, item)
-      if (instance) {
-        keyBindings[keyChar] = {
-          instance,
-          studentName: item.studentName,
-          sketchName: item.sketchName,
-          filePath: item.filePath,
-          active: false,
-        }
-
-        if (!studentKeyMap[item.studentName]) studentKeyMap[item.studentName] = []
-        studentKeyMap[item.studentName].push(keyChar)
-      }
-    }
-    if (keyIdx >= alphabet.length) break
-  }
-
-  // Update status element
-  const statusEl = document.getElementById('status')
-  if (statusEl) {
-    const summary = Object.entries(keyBindings)
-      .map(([k, v]) => `${k.toUpperCase()}: ${v.studentName} (${v.sketchName})`)
-      .join(' | ')
-    statusEl.textContent = summary || 'No sketches found'
-  }
-
-  const randomStudentBtn = document.getElementById('random-student-key')
-  const randomPoolBtn = document.getElementById('random-pool-key')
-
-  randomStudentBtn?.addEventListener('click', () => {
-    const selection = randomizeStudentKey()
-    if (!selection) return
-    triggerKey(selection.key)
-    const statusEl = document.getElementById('status')
-    if (statusEl) {
-      const sketchLabel = selection.binding?.sketchName ? ` (${selection.binding.sketchName})` : ''
-      statusEl.textContent = `Random student: ${selection.studentName}${sketchLabel} → ${selection.key.toUpperCase()}`
+    return {
+      filePath,
+      code,
+      studentName: parts[2],
+      sketchName: parts.length > 4 ? parts[parts.length - 2] : fileName.replace(/\.js$/, ''),
     }
   })
 
-  randomPoolBtn?.addEventListener('click', () => {
-    const selection = randomizePoolKey()
-    if (!selection) return
-    triggerKey(selection.key)
-    const statusEl = document.getElementById('status')
-    if (statusEl) {
-      const sketchLabel = selection.binding?.sketchName ? ` (${selection.binding.sketchName})` : ''
-      statusEl.textContent = `Random pool: ${selection.studentName}${sketchLabel} → ${selection.key.toUpperCase()}`
-    }
-  })
+  randomize()
+  document.getElementById('randomize')?.addEventListener('click', randomize)
 }
-
-window.draw = () => {
-  background(17)
-
-  // Render only sketches activated by triggerKey().
-  for (const [keyChar, binding] of Object.entries(keyBindings)) {
-    if (!binding.active) continue
-    const { instance } = binding
-    const progress = instance.progress
-      ? instance.progress()
-      : constrain((millis() - binding.startedAt) / 1000, 0, 1)
-
-    if (progress > 0 && progress < 1) {
-      push()
-      try {
-        instance.draw?.()
-      } catch (err) {
-        console.error(`Error in draw() for key [${keyChar}]:`, err)
-      }
-      pop()
-    } else {
-      binding.active = false
-    }
-  }
-}
-
-window.keyPressed = () => {
-  window.userStartAudio?.()
-  triggerKey(key)
-  return false
-}
-
-window.windowResized = () => resizeCanvas(windowWidth, windowHeight)
