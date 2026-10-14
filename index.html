@@ -1,58 +1,66 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Digital Interactivity — Class Patatap</title>
-    <style>
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-      html, body {
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: #111;
-        color: #ddd;
-        font-family: monospace;
-      }
-      #overlay {
-        position: fixed;
-        top: 8px;
-        left: 8px;
-        z-index: 100;
-        pointer-events: none;
-        font-size: 11px;
-        line-height: 1.4;
-      }
-      #overlay button {
-        pointer-events: auto;
-        cursor: pointer;
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        color: #eee;
-        padding: 6px 10px;
-        border-radius: 999px;
-        font: inherit;
-      }
-      canvas {
-        display: block;
-      }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/addons/p5.sound.min.js"></script>
-  </head>
-  <body>
-    <div id="overlay">
-      <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
-        <button id="random-student-key" type="button">Random Student Key</button>
-        <button id="random-pool-key" type="button">Random Pool Grid</button>
-      </div>
-      <div>Press A–Z on keyboard to trigger sketches</div>
-      <div id="status">Loading sketches...</div>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digital Interactivity — Class Patatap</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #111;
+      color: #ddd;
+      font-family: monospace;
+    }
+
+    #overlay {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      z-index: 100;
+      pointer-events: none;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    #overlay button {
+      pointer-events: auto;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #eee;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font: inherit;
+    }
+
+    canvas {
+      display: block;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/addons/p5.sound.min.js"></script>
+</head>
+
+<body>
+  <div id="overlay">
+    <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+      <button id="random-student-key" type="button">Random Student Key</button>
+      <button id="random-pool-key" type="button">Random Pool Grid</button>
     </div>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+    <div>Press A–Z on keyboard to trigger sketches</div>
+    <div id="status">Loading 0%</div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+
 </html>

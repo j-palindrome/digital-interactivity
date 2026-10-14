@@ -12,7 +12,6 @@ const sketchModules = import.meta.glob([
 ], {
   query: '?raw',
   import: 'default',
-  eager: true,
 })
 
 const soundModules = import.meta.glob('/students/**/*.{mp3,wav,ogg,m4a,aac,webm}', {
@@ -185,11 +184,44 @@ async function triggerKey(char) {
   }
 }
 
+function setStatus(text) {
+  const statusEl = document.getElementById('status')
+  if (statusEl) statusEl.textContent = text
+}
+
+async function loadSketchSources() {
+  const entries = Object.entries(sketchModules)
+  const total = entries.length
+  let done = 0
+  console.log(`[sketches] loading ${total} files`)
+  setStatus(`Loading 0% (0/${total})`)
+
+  const loaded = await Promise.all(entries.map(async ([filePath, load]) => {
+    let code = null
+    try {
+      code = await load()
+    } catch (err) {
+      console.error(`[sketches] failed ${filePath}:`, err)
+    }
+    done++
+    const pct = Math.round((done / total) * 100)
+    console.log(`[sketches] ${pct}% (${done}/${total}) ${filePath}`)
+    setStatus(`Loading ${pct}% (${done}/${total}) — ${filePath.replace('/students/', '')}`)
+    return [filePath, code]
+  }))
+
+  console.log(`[sketches] done: ${loaded.filter(([, c]) => c != null).length}/${total} loaded`)
+  return loaded.filter(([, code]) => code != null)
+}
+
 // p5 global mode supplies createCanvas, draw primitives, millis, key, etc.
 window.setup = () => {
   createCanvas(windowWidth, windowHeight)
   background(17)
+  loadSketchSources().then(bindSketches)
+}
 
+function bindSketches(sources) {
   // Group available sketch files by student folder
   // Exclude p5 library bundles and common helper scripts
   const ignoredFileNames = new Set([
@@ -203,7 +235,7 @@ window.setup = () => {
   ])
 
   const filesByFolder = {}
-  for (const [filePath, code] of Object.entries(sketchModules)) {
+  for (const [filePath, code] of sources) {
     const parts = filePath.split('/')
     // filePath pattern: /students/<studentName>/.../<filename>.js
     if (parts.length < 4) continue
