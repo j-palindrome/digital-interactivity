@@ -217,6 +217,57 @@ function bindSketches(sources) {
 
   randomize()
   document.getElementById('randomize')?.addEventListener('click', randomize)
+  document.getElementById('connect-arduino')?.addEventListener('click', connectToArduino)
+}
+
+// Arduino button over Web Serial: sends "0" while pressed, "1" while released.
+// A press (1 -> 0 edge) triggers a random bound key.
+let buttonState = 1
+
+async function connectToArduino() {
+  if (!('serial' in navigator)) {
+    console.error('Web Serial API is not supported in this browser.')
+    return
+  }
+
+  try {
+    const port = await navigator.serial.requestPort()
+    await port.open({ baudRate: 9600 })
+
+    const textDecoder = new TextDecoderStream()
+    port.readable.pipeTo(textDecoder.writable)
+    readSerial(textDecoder.readable.getReader())
+    console.log('[arduino] connected')
+  } catch (err) {
+    console.error('Serial connection error:', err)
+  }
+}
+
+async function readSerial(reader) {
+  let buffer = ''
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) return
+      buffer += value
+      const lines = buffer.split('\n')
+      buffer = lines.pop() // keep trailing incomplete piece
+
+      for (const rawLine of lines) {
+        const val = parseInt(rawLine.trim(), 10)
+        if (isNaN(val)) continue
+        if (buttonState === 1 && val === 0) triggerRandomKey()
+        buttonState = val
+      }
+    }
+  } catch (err) {
+    console.error('Stream read error:', err)
+  }
+}
+
+function triggerRandomKey() {
+  const keys = Object.keys(keyBindings)
+  if (keys.length) triggerKey(keys[Math.floor(Math.random() * keys.length)])
 }
 
 window.draw = () => {
