@@ -95,7 +95,8 @@ function compileSketch(codeString, meta) {
   try {
     const source = resolveSoundPaths(codeString, meta.filePath)
 
-    return new Function('loadSound', `
+    // createCanvas is a no-op so a sketch can't resize the shared host canvas
+    return new Function('loadSound', 'createCanvas', `
       ${source}
       return {
         setup: typeof setup === 'function' ? setup : null,
@@ -104,7 +105,7 @@ function compileSketch(codeString, meta) {
         progress: typeof progress === 'function' ? progress : null,
         setStartTime: (t) => { if (typeof startTime !== 'undefined') startTime = t },
       }
-    `)(loadSoundForSketch)
+    `)(loadSoundForSketch, () => {})
   } catch (err) {
     console.error(`Error compiling sketch [${meta.filePath}]:`, err)
     return null
@@ -137,6 +138,8 @@ async function triggerKey(char) {
   window.userStartAudio?.()
   const binding = keyBindings[char?.toLowerCase()]
   if (!binding) return
+
+  console.log('[sketches] triggering key', char, '->', binding.studentName, binding.sketchName)
 
   binding.active = false
   try {
@@ -215,3 +218,38 @@ function bindSketches(sources) {
   randomize()
   document.getElementById('randomize')?.addEventListener('click', randomize)
 }
+
+window.draw = () => {
+  background(17)
+
+  // Render only sketches activated by triggerKey().
+  for (const [keyChar, binding] of Object.entries(keyBindings)) {
+    if (!binding.active) continue
+    const { instance } = binding
+    const progress = instance.progress
+      ? instance.progress()
+      : constrain((millis() - binding.startedAt) / 1000, 0, 1)
+
+    if (progress > 0 && progress < 1) {
+      push()
+      try {
+        instance.draw?.()
+      } catch (err) {
+        console.error(`Error in draw() for key [${keyChar}]:`, err)
+      }
+      pop()
+    } else {
+      binding.active = false
+    }
+  }
+}
+
+window.keyPressed = (event) => {
+  // ignore OS key-repeat so a held key doesn't retrigger every ~30ms
+  if (event?.repeat) return false
+  window.userStartAudio?.()
+  triggerKey(key)
+  return false
+}
+
+window.windowResized = () => resizeCanvas(windowWidth, windowHeight)
